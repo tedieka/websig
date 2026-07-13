@@ -2,20 +2,18 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 
-<title>WEBGIS Advanced</title>
+<title>WEBGIS WMS Viewer</title>
 
-https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
-<link rel="stylesheetajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<link rel="kg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 
 html,body{
-margin:0;
 height:100%;
-font-family:Arial,sans-serif;
+margin:0;
+font-family:Arial,Helvetica,sans-serif;
 }
 
 #map{
@@ -23,237 +21,193 @@ height:100%;
 width:100%;
 }
 
-#sidebar{
+#panel{
 position:absolute;
 top:10px;
 left:10px;
 z-index:1000;
-width:300px;
 background:white;
-padding:15px;
-border-radius:10px;
-box-shadow:0 0 10px rgba(0,0,0,.3);
-max-height:90%;
-overflow:auto;
+padding:12px;
+border-radius:8px;
+box-shadow:0 0 10px rgba(0,0,0,0.3);
+width:280px;
 }
 
-#sidebar h3{
+#panel h3{
 margin-top:0;
 }
 
-input,
-select,
-button{
+select,button{
 width:100%;
 margin-top:5px;
 padding:8px;
-box-sizing:border-box;
 }
 
-button{
-background:#0078d7;
-color:white;
-border:none;
-cursor:pointer;
-}
-
-button:hover{
-background:#005ea6;
-}
-
-#coords{
+#coord{
 position:absolute;
 bottom:10px;
 left:10px;
 z-index:1000;
 background:white;
-padding:5px 10px;
+padding:6px;
 border-radius:5px;
 font-size:12px;
-}
-
-.layer-item{
-font-size:13px;
-padding:3px;
 }
 
 </style>
 </head>
 <body>
 
-<div id="sidebar">
+<div id="panel">
 
-<h3>WEBGIS Advanced</h3>
-
-<label>Cari Lokasi</label>
-<input id="searchText" placeholder="Jakarta">
-
-<button onclick="searchLocation()">
-Cari
-</button>
-
-<hr>
+<h3>WEBGIS WMS</h3>
 
 <label>Pilih Layer WMS</label>
 
 <select id="layerSelect">
-<option value="topp:states">USA States</option>
-<option value="topp:tasmania_roads">Tasmania Roads</option>
-<option value="topp:tasmania_water_bodies">Tasmania Water</option>
+
+<option value="topp:states">
+USA States
+</option>
+
+<option value="topp:tasmania_roads">
+Tasmania Roads
+</option>
+
+<option value="topp:tasmania_water_bodies">
+Tasmania Water
+</option>
+
 </select>
 
-<button onclick="addWMSLayer()">
-Tambah Layer
+<button onclick="loadLayer()">
+Tampilkan Layer
 </button>
-
-<hr>
-
-<label>Upload GeoJSON</label>
-<input type="file" id="geojsonFile">
 
 <button onclick="downloadGeoJSON()">
 Download GeoJSON
 </button>
 
-<hr>
-
-<b>Layer Aktif</b>
-
-<div id="layerList"></div>
-
 </div>
 
-<div id="coords">
+<div id="coord">
 Lat: 0 | Lon: 0
 </div>
 
 <div id="map"></div>
 
-/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<script src="https://cdnjs.cloudflare>
+1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-const map = L.map('map').setView([-2.5,121.3],5);
+const map = L.map('map').setView([20,-95],4);
 
-const osm = L.tileLayer(
+L.tileLayer(
 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
 {
-attribution:'OpenStreetMap'
-}
-);
-
-const topo = L.tileLayer(
-'https://tile.opentopomap.org/{z}/{x}/{y}.png'
-);
-
-const satellite = L.tileLayer(
-'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-);
-
-osm.addTo(map);
-
-L.control.layers(
-{
-'OpenStreetMap':osm,
-'Topo':topo,
-'Satellite':satellite
+attribution:'© OpenStreetMap'
 }
 ).addTo(map);
 
-L.control.scale().addTo(map);
+let currentLayer=null;
 
-map.on("mousemove",function(e){
+function loadLayer(){
 
-document.getElementById("coords").innerHTML=
-"Lat : "+e.latlng.lat.toFixed(6)+
-" | Lon : "+e.latlng.lng.toFixed(6);
+if(currentLayer){
+map.removeLayer(currentLayer);
+}
+
+const selected =
+document.getElementById(
+'layerSelect'
+).value;
+
+currentLayer = L.tileLayer.wms(
+'https://ahocevar.com/geoserver/wms',
+{
+layers:selected,
+format:'image/png',
+transparent:true
+}
+);
+
+currentLayer.addTo(map);
+
+}
+
+loadLayer();
+
+map.on('mousemove',function(e){
+
+document.getElementById('coord')
+.innerHTML =
+'Lat : '+
+e.latlng.lat.toFixed(6)+
+' | Lon : '+
+e.latlng.lng.toFixed(6);
 
 });
 
-let layerCounter=0;
-let activeLayers={};
+map.on('click',async function(e){
 
-function addWMSLayer(){
+if(!currentLayer) return;
 
-const layerName =
-document.getElementById("layerSelect").value;
-
-const layer =
-L.tileLayer.wms(
-'https://ahocevar.com/geoserver/wms',
-{
-layers:layerName,
-transparent:true,
-format:'image/png'
-}
-).addTo(map);
-
-const id='layer'+layerCounter++;
-
-activeLayers[id]=layer;
-
-const div=document.createElement('div');
-
-div.className='layer-item';
-
-div.innerHTML=
-'<input type="checkbox" checked onchange="toggleLayer(\''+
-id+
-'\',this.checked)"> '+layerName;
-
-document.getElementById('layerList')
-.appendChild(div);
-
-}
-
-function toggleLayer(id,status){
-
-if(status){
-map.addLayer(activeLayers[id]);
-}
-else{
-map.removeLayer(activeLayers[id]);
-}
-
-}
-
-let uploadedGeoJSON=null;
-
-document
-.getElementById("geojsonFile")
-.addEventListener("change",function(e){
-
-const file=e.target.files[0];
-
-const reader=new FileReader();
-
-reader.onload=function(evt){
-
-const data =
-JSON.parse(evt.target.result);
-
-if(uploadedGeoJSON){
-map.removeLayer(uploadedGeoJSON);
-}
-
-uploadedGeoJSON =
-L.geoJSON(data).addTo(map);
-
-map.fitBounds(
-uploadedGeoJSON.getBounds()
+const point =
+map.latLngToContainerPoint(
+e.latlng,
+map.getZoom()
 );
 
-};
+const size = map.getSize();
 
-reader.readAsText(file);
+const bbox =
+map.getBounds().toBBoxString();
+
+const layerName =
+document.getElementById(
+'layerSelect'
+).value;
+
+const url =
+'https://ahocevar.com/geoserver/wms' +
+'?SERVICE=WMS' +
+'&VERSION=1.1.1' +
+'&REQUEST=GetFeatureInfo' +
+'&LAYERS=' + layerName +
+'&QUERY_LAYERS=' + layerName +
+'&INFO_FORMAT=text/html' +
+'&SRS=EPSG:4326' +
+'&WIDTH=' + size.x +
+'&HEIGHT=' + size.y +
+'&X=' + Math.round(point.x) +
+'&Y=' + Math.round(point.y) +
+'&BBOX=' + bbox;
+
+try{
+
+const response =
+await fetch(url);
+
+const html =
+await response.text();
+
+L.popup()
+.setLatLng(e.latlng)
+.setContent(html)
+.openOn(map);
+
+}
+catch(err){
+
+console.log(err);
+
+}
 
 });
 
 function downloadGeoJSON(){
 
-const sample={
+const geojson = {
 
 "type":"FeatureCollection",
 
@@ -274,7 +228,7 @@ const sample={
 
 const blob =
 new Blob(
-[JSON.stringify(sample,null,2)],
+[JSON.stringify(geojson,null,2)],
 {
 type:"application/json"
 }
@@ -287,66 +241,11 @@ a.href =
 URL.createObjectURL(blob);
 
 a.download =
-"data.geojson";
+"soroako.geojson";
 
 a.click();
 
 }
-
-async function searchLocation(){
-
-const text =
-document.getElementById("searchText").value;
-
-const url =
-"https://nominatim.openstreetmap.org/search?format=json&q="
-+
-encodeURIComponent(text);
-
-const result =
-await fetch(url)
-.then(r=>r.json());
-
-if(result.length){
-
-map.setView(
-[
-parseFloat(result[0].lat),
-parseFloat(result[0].lon)
-],
-12
-);
-
-}
-
-}
-
-const drawnItems =
-new L.FeatureGroup();
-
-map.addLayer(drawnItems);
-
-const drawControl =
-new L.Control.Draw({
-
-edit:{
-featureGroup:drawnItems
-}
-
-});
-
-map.addControl(drawControl);
-
-map.on(
-L.Draw.Event.CREATED,
-function(e){
-
-drawnItems.addLayer(
-e.layer
-);
-
-}
-);
 
 </script>
 
