@@ -94,6 +94,9 @@
       border: none;
       background: white;
       padding: 0;
+      pointer-events: auto;
+      z-index: 1200;
+      position: relative;
     }
     #measure-control button.active {
       background-color: #0079c1;
@@ -171,14 +174,19 @@
       padding: 8px;
       font-size: 12px;
       margin-top: 6px;
+      display: block;
     }
-    .leaflet-control-layers:not(.leaflet-control-layers-expanded) .leaflet-control-layers-list {
+    .leaflet-control-layers .leaflet-control-layers-list {
       display: none;
     }
     .leaflet-control-layers:hover .leaflet-control-layers-list,
     .leaflet-control-layers:focus-within .leaflet-control-layers-list,
     .leaflet-control-layers.leaflet-control-layers-expanded .leaflet-control-layers-list {
       display: block;
+    }
+    .leaflet-control-layers .leaflet-control-layers-toggle {
+      display: flex !important;
+      opacity: 1 !important;
     }
   </style>
 </head>
@@ -216,22 +224,6 @@
       <strong>Upload Data GeoJSON/KMZ:</strong>
       <input type="file" id="geojson-upload" accept=".geojson,.json,.kmz,.kml" />
       <button class="btn small" id="upload-btn">Tampilkan Layer</button>
-    </div>
-
-    <div class="info-box">
-      <strong>Widget Layer & Basemap</strong>
-      <label class="form-row">
-        <input type="checkbox" id="admin-layer-toggle" checked />
-        Tampilkan batas administrasi (WMS)
-      </label>
-      <div class="form-row">
-        <label for="basemap-select">Basemap</label>
-        <select id="basemap-select">
-          <option value="OpenStreetMap">OpenStreetMap</option>
-          <option value="Esri World Imagery">Esri World Imagery</option>
-          <option value="Carto Light">Carto Light</option>
-        </select>
-      </div>
     </div>
 
     <button class="btn" id="download-btn">Unduh Data (GeoJSON)</button>
@@ -290,9 +282,6 @@
 
     L.control.layers(baseLayers, overlayLayers, { position: 'topright' }).addTo(map);
 
-    const basemapSelect = document.getElementById('basemap-select');
-    const adminLayerToggle = document.getElementById('admin-layer-toggle');
-
     function setBaseMap(layerKey) {
       Object.entries(baseLayers).forEach(([key, layer]) => {
         if (layer && map.hasLayer(layer) && key !== layerKey) {
@@ -306,17 +295,8 @@
       }
     }
 
-    basemapSelect.addEventListener('change', (event) => {
-      setBaseMap(event.target.value);
-    });
-
-    adminLayerToggle.addEventListener('change', (event) => {
-      if (event.target.checked) {
-        adminBoundaryWmsLayer.addTo(map);
-      } else {
-        map.removeLayer(adminBoundaryWmsLayer);
-      }
-    });
+    const defaultBaseMap = 'OpenStreetMap';
+    setBaseMap(defaultBaseMap);
 
     const featureServiceUrl = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_States_Generalized/FeatureServer/0';
     const measureControl = document.getElementById('measure-control');
@@ -376,11 +356,19 @@
 
     measureButton.addEventListener('click', (event) => {
       event.preventDefault();
+      event.stopPropagation();
       if (measureActive) {
         clearMeasure();
         return;
       }
       startMeasure();
+    });
+
+    map.on('click', (event) => {
+      if (!measureActive) return;
+      const latlng = event.latlng;
+      if (!latlng) return;
+      handleMeasureClick({ latlng });
     });
 
     const statesLayer = L.esri.featureLayer({
