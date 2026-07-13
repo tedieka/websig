@@ -10,12 +10,15 @@
       height: 100%;
       margin: 0;
       font-family: Arial, sans-serif;
+      overflow: hidden;
     }
     body {
       display: flex;
+      position: relative;
     }
     #sidebar {
       width: 320px;
+      max-width: 90vw;
       background: #f4f5f7;
       padding: 20px;
       box-shadow: 2px 0 5px rgba(0,0,0,0.1);
@@ -23,10 +26,40 @@
       display: flex;
       flex-direction: column;
       gap: 15px;
+      overflow-y: auto;
+      height: 100vh;
+      box-sizing: border-box;
+      transition: transform 0.3s ease;
+    }
+    #sidebar.hidden {
+      transform: translateX(-100%);
+      width: 0;
+      padding: 0;
+      overflow: hidden;
     }
     #map {
       flex: 1;
-      min-height: 100vh;
+      height: 100vh;
+      width: 100%;
+    }
+    #toggle-sidebar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 1100;
+      background: #0079c1;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #toggle-sidebar:hover {
+      background: #005e96;
+    }
+    #sidebar.hidden + #map {
+      width: 100vw;
     }
     .btn {
       background-color: #0079c1;
@@ -42,23 +75,72 @@
     .btn:hover {
       background-color: #005e96;
     }
+    .btn.small {
+      padding: 8px 12px;
+      font-size: 12px;
+    }
     .info-box {
       background: white;
       padding: 10px;
       border-radius: 4px;
       border: 1px solid #ccc;
       font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .form-row label {
+      font-weight: bold;
+    }
+    .form-row input,
+    .form-row select,
+    .form-row input[type="file"] {
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 12px;
     }
   </style>
 </head>
 <body>
+  <button id="toggle-sidebar">☰</button>
   <div id="sidebar">
     <h3>Portal Geo-Mini</h3>
     <p>Aplikasi ini mendemonstrasikan fungsi <i>streaming layer</i> dan ekstraksi data spasial dari server ArcGIS REST API.</p>
 
     <div class="info-box">
-      <strong>Status Layer Aktif:</strong>
-      <div id="layer-status">Memuat data batas wilayah...</div>
+      <strong>Cari Koordinat UTM:</strong>
+      <div class="form-row">
+        <label for="utm-easting">Easting</label>
+        <input id="utm-easting" type="number" value="500000" />
+      </div>
+      <div class="form-row">
+        <label for="utm-northing">Northing</label>
+        <input id="utm-northing" type="number" value="5000000" />
+      </div>
+      <div class="form-row">
+        <label for="utm-zone">Zona</label>
+        <input id="utm-zone" type="number" min="1" max="60" value="47" />
+      </div>
+      <div class="form-row">
+        <label for="utm-hemisphere">Hemisphere</label>
+        <select id="utm-hemisphere">
+          <option value="N">N</option>
+          <option value="S">S</option>
+        </select>
+      </div>
+      <button class="btn small" id="utm-search-btn">Cari UTM</button>
+    </div>
+
+    <div class="info-box">
+      <strong>Upload Data GeoJSON:</strong>
+      <input type="file" id="geojson-upload" accept=".geojson,.json" />
+      <button class="btn small" id="upload-btn">Tampilkan Layer</button>
     </div>
 
     <button class="btn" id="download-btn">Unduh Data (GeoJSON)</button>
@@ -70,6 +152,9 @@
   <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
   <script>
     const map = L.map('map').setView([39.5, -98.35], 4);
+    let uploadedLayer = null;
+    let searchMarker = null;
+    let activeLayerSource = { type: 'arcgis', data: null, name: 'arcgis-state-layer' };
 
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
@@ -89,30 +174,141 @@
     }).addTo(map);
 
     statesLayer.on('load', function () {
-      document.getElementById('layer-status').textContent = 'Layer berhasil dimuat';
+      activeLayerSource = { type: 'arcgis', data: null, name: 'arcgis-state-layer' };
+    });
+
+    function utmToLatLng(easting, northing, zone, hemisphere) {
+      const a = 6378137;
+      const e2 = 0.00669438;
+      const ePrime2 = e2 / (1 - e2);
+      const k0 = 0.9996;
+      const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+
+      let x = Number(easting) - 500000;
+      let y = Number(northing);
+      if (hemisphere.toUpperCase() === 'S') {
+        y -= 10000000;
+      }
+
+      const M = y / k0;
+      const mu = M / (a * (1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 * e2 * e2 / 256));
+      const phi1 = mu + (3 * e1 / 2 - 27 * e1 * e1 * e1 / 32) * Math.sin(2 * mu)
+        + (21 * e1 * e1 / 16 - 55 * e1 * e1 * e1 * e1 / 32) * Math.sin(4 * mu)
+        + (151 * e1 * e1 * e1 / 96) * Math.sin(6 * mu)
+        + (1097 * e1 * e1 * e1 * e1 * e1 / 512) * Math.sin(8 * mu);
+      const C1 = ePrime2 * Math.cos(phi1) * Math.cos(phi1);
+      const T1 = Math.tan(phi1) * Math.tan(phi1);
+      const N1 = a / Math.sqrt(1 - e2 * Math.sin(phi1) * Math.sin(phi1));
+      const R1 = a * (1 - e2) / Math.pow(1 - e2 * Math.sin(phi1) * Math.sin(phi1), 1.5);
+      const D = x / (N1 * k0);
+
+      const latRad = phi1 - (N1 * Math.tan(phi1) / R1) * (
+        Math.pow(D, 2) / 2
+        - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * ePrime2) * Math.pow(D, 4) / 24
+        + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * ePrime2 - 3 * C1 * C1) * Math.pow(D, 6) / 720
+      );
+      const lonRad = (
+        D - (1 + 2 * T1 + C1) * Math.pow(D, 3) / 6
+        + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ePrime2 + 24 * T1 * T1) * Math.pow(D, 5) / 120
+      ) / Math.cos(phi1);
+      const lon0 = (zone - 1) * 6 - 180 + 3;
+      const latDeg = latRad * 180 / Math.PI;
+      const lonDeg = lon0 + lonRad * 180 / Math.PI;
+      return [latDeg, lonDeg];
+    }
+
+    document.getElementById('utm-search-btn').addEventListener('click', () => {
+      const easting = parseFloat(document.getElementById('utm-easting').value);
+      const northing = parseFloat(document.getElementById('utm-northing').value);
+      const zone = parseInt(document.getElementById('utm-zone').value, 10);
+      const hemisphere = document.getElementById('utm-hemisphere').value;
+
+      if (Number.isNaN(easting) || Number.isNaN(northing) || Number.isNaN(zone)) {
+        console.log('Isi semua field koordinat UTM.');
+        return;
+      }
+
+      const [lat, lng] = utmToLatLng(easting, northing, zone, hemisphere);
+      if (searchMarker) {
+        map.removeLayer(searchMarker);
+      }
+      searchMarker = L.marker([lat, lng]).addTo(map);
+      searchMarker.bindPopup(`UTM: ${easting}, ${northing}<br>Lat/Lng: ${lat.toFixed(6)}, ${lng.toFixed(6)}`).openPopup();
+      map.setView([lat, lng], 12);
+      console.log(`Koordinat UTM ditemukan di ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    });
+
+    document.getElementById('upload-btn').addEventListener('click', () => {
+      const fileInput = document.getElementById('geojson-upload');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        console.log('Pilih file GeoJSON terlebih dahulu.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function (event) {
+        try {
+          const geojson = JSON.parse(event.target.result);
+          if (uploadedLayer) {
+            map.removeLayer(uploadedLayer);
+          }
+
+          uploadedLayer = L.geoJSON(geojson, {
+            style: function () {
+              return { color: '#ff6b6b', weight: 2, fillOpacity: 0.25 };
+            }
+          }).addTo(map);
+
+          activeLayerSource = { type: 'upload', data: geojson, name: file.name };
+
+          const bounds = uploadedLayer.getBounds();
+          if (bounds && bounds.isValid()) {
+            map.fitBounds(bounds);
+          }
+          console.log('Layer GeoJSON berhasil ditampilkan');
+        } catch (error) {
+          console.error(error);
+          console.log('File GeoJSON tidak valid');
+        }
+      };
+      reader.readAsText(file);
     });
 
     document.getElementById('download-btn').addEventListener('click', async () => {
-      const statusEl = document.getElementById('layer-status');
-      const queryUrl = featureServiceUrl + '/query?where=1%3D1&outFields=*&f=geojson';
-
       try {
-        statusEl.textContent = 'Mengunduh data...';
-        const response = await fetch(queryUrl);
-        if (!response.ok) throw new Error('Gagal mengambil data');
-        const geojson = await response.json();
+        let geojson;
+        let downloadName = 'data.geojson';
+
+        if (activeLayerSource.type === 'upload' && activeLayerSource.data) {
+          geojson = activeLayerSource.data;
+          downloadName = activeLayerSource.name.replace(/\.[^.]+$/, '') + '.geojson';
+        } else {
+          const queryUrl = featureServiceUrl + '/query?where=1%3D1&outFields=*&f=geojson';
+          const response = await fetch(queryUrl);
+          if (!response.ok) throw new Error('Gagal mengambil data');
+          geojson = await response.json();
+        }
 
         const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'data.geojson';
+        a.download = downloadName;
         a.click();
         URL.revokeObjectURL(a.href);
-        statusEl.textContent = 'Unduhan selesai';
+        console.log('Unduhan selesai');
       } catch (error) {
         console.error(error);
-        statusEl.textContent = 'Gagal mengunduh data';
+        console.log('Gagal mengunduh data');
       }
+    });
+
+    document.getElementById('toggle-sidebar').addEventListener('click', () => {
+      const sidebar = document.getElementById('sidebar');
+      sidebar.classList.toggle('hidden');
+      const button = document.getElementById('toggle-sidebar');
+      button.textContent = sidebar.classList.contains('hidden') ? '☰' : '✕';
     });
   </script>
 </body>
