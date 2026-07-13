@@ -6,294 +6,204 @@
 
 <title>Portal Geo-Mini</title>
 
-<link rel="stylesheet" hrefleaflet.css"/>
+<link rel="stylesheet"
+href="httpsst/leaflet.css
 
 <style>
-
 body{
-margin:0;
-padding:0;
-display:flex;
-height:100vh;
-font-family:Arial, sans-serif;
+    font-family: Arial, sans-serif;
+    margin:0;
+    padding:0;
+    display:flex;
+    height:100vh;
 }
 
 #sidebar{
-width:320px;
-background:#f4f5f7;
-padding:20px;
-box-shadow:2px 0 5px rgba(0,0,0,0.1);
-z-index:1000;
-overflow-y:auto;
+    width:320px;
+    background:#f4f5f7;
+    padding:20px;
+    box-shadow:2px 0 5px rgba(0,0,0,0.1);
+    z-index:1000;
+    display:flex;
+    flex-direction:column;
+    gap:15px;
 }
 
 #map{
-flex:1;
-height:100%;
+    flex:1;
+    height:100%;
 }
 
 .btn{
-background:#0079c1;
-color:white;
-border:none;
-padding:10px;
-cursor:pointer;
-border-radius:4px;
-width:100%;
-margin-top:5px;
+    background-color:#0079c1;
+    color:white;
+    border:none;
+    padding:10px 15px;
+    font-size:14px;
+    cursor:pointer;
+    border-radius:4px;
+    font-weight:bold;
 }
 
 .btn:hover{
-background:#005e96;
+    background-color:#005e96;
 }
 
 .info-box{
-background:white;
-padding:10px;
-border-radius:4px;
-border:1px solid #ccc;
-margin-bottom:10px;
+    background:white;
+    padding:10px;
+    border-radius:4px;
+    border:1px solid #ccc;
+    font-size:12px;
 }
 
-select,
-input{
-width:100%;
-padding:8px;
-box-sizing:border-box;
-margin-bottom:10px;
+select,input{
+    padding:8px;
+    width:100%;
+    box-sizing:border-box;
 }
 
-#coord{
-font-size:12px;
-margin-top:10px;
+#coords{
+    font-size:12px;
+    background:white;
+    padding:8px;
+    border:1px solid #ccc;
 }
-
-.layer-item{
-font-size:13px;
-margin-top:3px;
-}
-
 </style>
 </head>
+
 <body>
 
 <div id="sidebar">
 
-<h2>Portal Geo-Mini</h2>
+    <h3>Portal Geo-Mini</h3>
 
-<p>
-WEBGIS sederhana menggunakan Leaflet dan WMS publik.
-</p>
+    <p>
+    Streaming layer WMS publik dan download data GeoJSON.
+    </p>
 
-<div class="info-box">
-<b>Status</b>
-<div id="layer-status">
-Siap
-</div>
-</div>
+    <div class="info-box">
+        <strong>Status Layer Aktif:</strong>
+        <div id="layer-status">
+            Siap
+        </div>
+    </div>
 
-<h4>Cari Lokasi</h4>
+    <label>Pilih Layer</label>
 
-<input
-id="searchText"
-placeholder="Jakarta">
+    <select id="layerSelect">
+        <option value="topp:states">USA States</option>
+        <option value="topp:tasmania_roads">Tasmania Roads</option>
+        <option value="topp:tasmania_water_bodies">Tasmania Water Bodies</option>
+    </select>
 
-<button
-class="btn"
-onclick="searchLocation()">
-Cari Lokasi
-</button>
+    <button class="btn" onclick="loadLayer()">
+        Tampilkan Layer
+    </button>
 
-<hr>
+    <input
+        type="text"
+        id="searchText"
+        placeholder="Cari lokasi">
 
-<h4>Pilih Layer WMS</h4>
+    <button class="btn" onclick="searchLocation()">
+        Cari Lokasi
+    </button>
 
-<select id="layerSelect">
+    <button class="btn" id="download-btn">
+        Unduh Data (GeoJSON)
+    </button>
 
-<option value="topp:states">
-USA States
-</option>
-
-<option value="topp:tasmania_roads">
-Tasmania Roads
-</option>
-
-<option value="topp:tasmania_water_bodies">
-Tasmania Water Bodies
-</option>
-
-</select>
-
-<button
-class="btn"
-onclick="addWMSLayer()">
-
-Tambah Layer
-
-</button>
-
-<hr>
-
-<h4>Upload GeoJSON</h4>
-
-<input
-type="file"
-id="geojsonFile">
-
-<button
-class="btn"
-onclick="downloadSample()">
-
-Unduh Contoh GeoJSON
-
-</button>
-
-<hr>
-
-<h4>Layer Aktif</h4>
-
-<div id="layerList"></div>
-
-<div id="coord">
-Lat: 0 | Lon: 0
-</div>
+    <div id="coords">
+        Lat: 0 | Lon: 0
+    </div>
 
 </div>
 
 <div id="map"></div>
 
-<script src="https://t.js"></script>
+unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-const map =
-L.map('map')
-.setView([-2.5,121.3],5);
+const map = L.map('map').setView([20,-95],4);
 
 L.tileLayer(
 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
 {
-attribution:'© OpenStreetMap'
+    attribution:'© OpenStreetMap'
 }
 ).addTo(map);
 
-let activeLayers = {};
-let layerCounter = 0;
-let uploadedLayer = null;
+let currentWMS = null;
+
+function loadLayer(){
+
+    const layerName =
+    document.getElementById('layerSelect').value;
+
+    if(currentWMS){
+        map.removeLayer(currentWMS);
+    }
+
+    currentWMS = L.tileLayer.wms(
+        'https://ahocevar.com/geoserver/wms',
+        {
+            layers:layerName,
+            format:'image/png',
+            transparent:true
+        }
+    );
+
+    currentWMS.addTo(map);
+
+    document.getElementById('layer-status').innerHTML =
+    'Layer aktif: ' + layerName;
+}
+
+loadLayer();
 
 map.on('mousemove',function(e){
 
-document.getElementById('coord').innerHTML =
-'Lat : ' +
-e.latlng.lat.toFixed(6) +
-' | Lon : ' +
-e.latlng.lng.toFixed(6);
+    document.getElementById('coords').innerHTML =
+    'Lat: ' +
+    e.latlng.lat.toFixed(6) +
+    ' | Lon: ' +
+    e.latlng.lng.toFixed(6);
 
 });
 
-function addWMSLayer(){
+async function searchLocation(){
 
-const layerName =
-document.getElementById(
-'layerSelect'
-).value;
+    const keyword =
+    document.getElementById('searchText').value;
 
-const layer =
-L.tileLayer.wms(
-'https://ahocevar.com/geoserver/wms',
-{
-layers:layerName,
-format:'image/png',
-transparent:true
-}
-).addTo(map);
+    if(!keyword) return;
 
-const id =
-'layer_' + layerCounter++;
+    const response =
+    await fetch(
+    'https://nominatim.openstreetmap.org/search?format=json&q=' +
+    encodeURIComponent(keyword));
 
-activeLayers[id] = layer;
+    const result =
+    await response.json();
 
-const div =
-document.createElement('div');
+    if(result.length){
 
-div.className='layer-item';
+        map.setView(
+        [
+            parseFloat(result[0].lat),
+            parseFloat(result[0].lon)
+        ],
+        12);
 
-div.innerHTML =
-`<input type="checkbox"
-checked
-onchange="toggleLayer('${id}',this.checked)">
-${layerName}`;
-
-document
-.getElementById('layerList')
-.appendChild(div);
-
-document
-.getElementById('layer-status')
-.innerHTML =
-'Layer berhasil ditambahkan';
-
-}
-
-function toggleLayer(id,status){
-
-if(status){
-map.addLayer(activeLayers[id]);
-}else{
-map.removeLayer(activeLayers[id]);
-}
+    }
 
 }
 
 document
-.getElementById('geojsonFile')
-.addEventListener(
-'change',
-function(e){
-
-const file =
-e.target.files[0];
-
-if(!file) return;
-
-const reader =
-new FileReader();
-
-reader.onload =
-function(evt){
-
-const geojson =
-JSON.parse(
-evt.target.result
-);
-
-if(uploadedLayer){
-map.removeLayer(
-uploadedLayer
-);
-}
-
-uploadedLayer =
-L.geoJSON(
-geojson
-).addTo(map);
-
-map.fitBounds(
-uploadedLayer.getBounds()
-);
-
-document
-.getElementById('layer-status')
-.innerHTML =
-'GeoJSON berhasil dimuat';
-
-};
-
-reader.readAsText(file);
-
-});
-
-function downloadSample(){
+.getElementById('download-btn')
+.addEventListener('click',function(){
 
 const geojson = {
 "type":"FeatureCollection",
@@ -313,61 +223,23 @@ const geojson = {
 
 const blob =
 new Blob(
-[
-JSON.stringify(
-geojson,
-null,
-2
-)
-],
+[JSON.stringify(geojson,null,2)],
 {
-type:"application/json"
-}
-);
+type:'application/json'
+});
 
 const a =
-document.createElement("a");
+document.createElement('a');
 
 a.href =
 URL.createObjectURL(blob);
 
 a.download =
-"contoh.geojson";
+'sample.geojson';
 
 a.click();
 
-}
-
-async function searchLocation(){
-
-const text =
-document.getElementById(
-'searchText'
-).value;
-
-if(!text) return;
-
-const url =
-'https://nominatim.openstreetmap.org/search?format=json&q=' +
-encodeURIComponent(text);
-
-const result =
-await fetch(url)
-.then(r=>r.json());
-
-if(result.length){
-
-map.setView(
-[
-parseFloat(result[0].lat),
-parseFloat(result[0].lon)
-],
-12
-);
-
-}
-
-}
+});
 
 </script>
 
