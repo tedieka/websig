@@ -322,29 +322,30 @@
       map.off('click', handleMeasureClick);
     }
 
+
     function handleMeasureClick(event) {
       if (!measureActive) return;
       const latlng = event.latlng;
-      if (measurePoints.length === 0) {
-        measurePoints.push(latlng);
-        measureLine = L.polyline([latlng], { color: '#d9534f', weight: 3 }).addTo(map);
-        return;
-      }
+      if (!latlng) return;
 
+      // akumulasi multi-klik sampai user stop dengan tombol measure lagi
       measurePoints.push(latlng);
-      measureLine.setLatLngs(measurePoints);
+
+      if (!measureLine) {
+        measureLine = L.polyline([latlng], { color: '#d9534f', weight: 3 }).addTo(map);
+      } else {
+        measureLine.setLatLngs(measurePoints);
+      }
 
       const totalDistance = measurePoints.reduce((sum, point, index) => {
         return index === 0 ? 0 : sum + map.distance(measurePoints[index - 1], point) / 1000;
       }, 0);
 
-      if (activePopup) {
-        map.closePopup(activePopup);
-      }
+      if (activePopup) map.closePopup(activePopup);
       activePopup = L.popup().setLatLng(latlng).setContent(`<b>Jarak:</b> ${totalDistance.toFixed(2)} km`);
       activePopup.addTo(map);
-      clearMeasure();
     }
+
 
     function startMeasure() {
       clearMeasure();
@@ -358,18 +359,16 @@
       event.preventDefault();
       event.stopPropagation();
       if (measureActive) {
+        // stop measure
         clearMeasure();
         return;
       }
+      // start measure (multi-klik akumulatif)
       startMeasure();
     });
 
-    map.on('click', (event) => {
-      if (!measureActive) return;
-      const latlng = event.latlng;
-      if (!latlng) return;
-      handleMeasureClick({ latlng });
-    });
+
+
 
     const statesLayer = L.esri.featureLayer({
       url: featureServiceUrl,
