@@ -151,10 +151,14 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
   <script>
-    const map = L.map('map').setView([39.5, -98.35], 4);
+    const map = L.map('map', {
+      zoomControl: false
+    }).setView([39.5, -98.35], 4);
     let uploadedLayer = null;
     let searchMarker = null;
     let activeLayerSource = { type: 'arcgis', data: null, name: 'arcgis-state-layer' };
+
+    L.control.zoom({ position: 'topright' }).addTo(map);
 
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
