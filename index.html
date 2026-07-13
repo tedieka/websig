@@ -1,84 +1,106 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aplikasi GIS Mini: Streaming & Download Data ArcGIS</title>
-    
-    <!-- CSS Leaflet untuk styling peta -->
-    <link rel="stylesheet" href="https://unpkg.com" />
-    
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            height: 100vh;
-        }
-        #sidebar {
-            width: 320px;
-            background: #f4f5f7;
-            padding: 20px;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        #map {
-            flex: 1;
-            height: 100%;
-        }
-        .btn {
-            background-color: #0079c1;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            font-size: 14px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-weight: bold;
-            transition: background 0.2s;
-        }
-        .btn:hover {
-            background-color: #005e96;
-        }
-        .info-box {
-            background: white;
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-            font-size: 12px;
-        }
-    </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>WEBGIS WMS Viewer</title>
+
+<link rel="kg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<style>
+
+html,body{
+height:100%;
+margin:0;
+font-family:Arial,Helvetica,sans-serif;
+}
+
+#map{
+height:100%;
+width:100%;
+}
+
+#panel{
+position:absolute;
+top:10px;
+left:10px;
+z-index:1000;
+background:white;
+padding:12px;
+border-radius:8px;
+box-shadow:0 0 10px rgba(0,0,0,0.3);
+width:280px;
+}
+
+#panel h3{
+margin-top:0;
+}
+
+select,button{
+width:100%;
+margin-top:5px;
+padding:8px;
+}
+
+#coord{
+position:absolute;
+bottom:10px;
+left:10px;
+z-index:1000;
+background:white;
+padding:6px;
+border-radius:5px;
+font-size:12px;
+}
+
+</style>
 </head>
 <body>
 
-    <!-- Panel Kontrol Samping (Sidebar) -->
-    <div id="sidebar">
-        <h3>Portal Geo-Mini</h3>
-        <p>Aplikasi ini mendemonstrasikan fungsi <i>streaming layer</i> dan ekstraksi data spasial dari server ArcGIS REST API.</p>
-        
-        <div class="info-box">
-            <strong>Status Layer Aktif:</strong>
-            <div id="layer-status">Memuat data batas wilayah...</div>
-        </div>
+<div id="panel">
 
-        <!-- Tombol untuk mengunduh data berupa file GeoJSON -->
-        <button class="btn" id="download-btn">Unduh Data (GeoJSON)</button>
-    </div>
+<h3>WEBGIS WMS</h3>
 
-    <!-- Kontainer Utama Peta -->
-    <div id="map"></div>
+<label>Pilih Layer WMS</label>
 
-    <!-- JS Leaflet & Pustaka Esri Leaflet untuk koneksi ke ArcGIS -->
-    <script src="https://unpkg.com"></script>
-    <script src="https://unpkg.com"></script>
+<select id="layerSelect">
+
+<option value="topp:states">
+USA States
+</option>
+
+<option value="topp:tasmania_roads">
+Tasmania Roads
+</option>
+
+<option value="topp:tasmania_water_bodies">
+Tasmania Water
+</option>
+
+</select>
+
+<button onclick="loadLayer()">
+Tampilkan Layer
+</button>
+
+<button onclick="downloadGeoJSON()">
+Download GeoJSON
+</button>
+
+</div>
+
+<div id="coord">
+Lat: 0 | Lon: 0
+</div>
+
+<div id="map"></div>
+
+1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-const map = L.map('map').setView([39,-98],4);
+const map = L.map('map').setView([20,-95],4);
 
 L.tileLayer(
 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -87,112 +109,67 @@ attribution:'© OpenStreetMap'
 }
 ).addTo(map);
 
-const featureServiceUrl =
-'https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_States_Generalized/FeatureServer/0';
+let currentLayer=null;
 
-const statesLayer = L.esri.featureLayer({
-url: featureServiceUrl,
-style:function(){
-return{
-color:'#0079c1',
-weight:2,
-fillOpacity:0.3
-};
+function loadLayer(){
+
+if(currentLayer){
+map.removeLayer(currentLayer);
 }
-}).addTo(map);
 
-statesLayer.on('load',function(){
-document.getElementById('layer-status').innerHTML=
-'Layer berhasil dimuat';
-});
+const selected =
+document.getElementById(
+'layerSelect'
+).value;
 
-document
-.getElementById('download-btn')
-.addEventListener('click',async ()=>{
-
-const url =
-featureServiceUrl +
-'/query?where=1%3D1&outFields=*&f=geojson';
-
-const response = await fetch(url);
-const geojson = await response.json();
-
-const blob = new Blob(
-[JSON.stringify(geojson,null,2)],
-{type:'application/json'}
+currentLayer = L.tileLayer.wms(
+'https://ahocevar.com/geoserver/wms',
+{
+layers:selected,
+format:'image/png',
+transparent:true
+}
 );
 
-const a = document.createElement('a');
+currentLayer.addTo(map);
 
-a.href = URL.createObjectURL(blob);
-a.download='data.geojson';
-a.click();
+}
+
+loadLayer();
+
+map.on('mousemove',function(e){
+
+document.getElementById('coord')
+.innerHTML =
+'Lat : '+
+e.latlng.lat.toFixed(6)+
+' | Lon : '+
+e.latlng.lng.toFixed(6);
 
 });
 
-</script>
-        // 1. Inisialisasi Peta dengan koordinat tengah wilayah Indonesia
-        const map = L.map('map').setView([-2.5, 118.0], 5);
+map.on('click',async function(e){
 
-        // 2. Menambahkan Basemap Grid Standar (Basemap open-source sebagai latar)
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
+if(!currentLayer) return;
 
-        // 3. STREAMING MAP: Menghubungkan ke ArcGIS REST Service (Contoh data sampel Esri)
-        // Jika menggunakan Ina-Geoportal, URL ini diganti dengan endpoint internal tanahair.indonesia.go.id
-        const featureServiceUrl = 'https://arcgis.com';
+const point =
+map.latLngToContainerPoint(
+e.latlng,
+map.getZoom()
+);
 
-        // Tampilkan layer langsung ke peta secara dinamis (streaming vektor)
-        const geoserverLayer = L.esri.featureLayer({
-            url: featureServiceUrl,
-            style: function () {
-                return { color: '#0079c1', weight: 2, fillOpacity: 0.2 };
-            }
-        }).addTo(map);
+const size = map.getSize();
 
-        // Memberikan popup informasi ketika poligon peta di-klik pengguna
-        geoserverLayer.bindPopup(function (layer) {
-            return L.Util.template('<h4>{STATE_NAME}</h4><p>Total Populasi: {POP_CENSUS2020}</p>', layer.feature.properties);
-        });
+const bbox =
+map.getBounds().toBBoxString();
 
-        geoserverLayer.on('load', function() {
-            document.getElementById('layer-status').innerText = "Layer berhasil dimuat dari server.";
-        });
+const layerName =
+document.getElementById(
+'layerSelect'
+).value;
 
-        // 4. UNDUH DATA: Mengambil data spasial asli dari server menggunakan kueri REST API
-        document.getElementById('download-btn').addEventListener('click', function () {
-            document.getElementById('layer-status').innerText = "Sedang memproses unduhan...";
-            
-            // Membuat URL kueri untuk meminta format mentah GeoJSON
-            // `where=1=1` mengambil semua data, `f=geojson` memaksa server mengembalikan format berkas standar geospasial
-            const queryUrl = `${featureServiceUrl}/query?where=1=1&outFields=*&f=geojson`;
-
-            fetch(queryUrl)
-                .then(response => {
-                    if (!response.ok) throw new Error("Gagal mengambil data dari server ArcGIS.");
-                    return response.json();
-                })
-                .then(geojsonData => {
-                    // Konversi objek JSON menjadi file text blob agar bisa diunduh browser
-                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geojsonData));
-                    const downloadAnchor = document.createElement('a');
-                    
-                    downloadAnchor.setAttribute("href", dataStr);
-                    downloadAnchor.setAttribute("download", "data_rbi_extracted.geojson");
-                    document.body.appendChild(downloadAnchor);
-                    
-                    downloadAnchor.click(); // Memicu download otomatis pada browser komputer
-                    downloadAnchor.remove();
-                    
-                    document.getElementById('layer-status').innerText = "Unduhan selesai!";
-                })
-                .catch(error => {
-                    console.error(error);
-                    document.getElementById('layer-status').innerText = "Gagal mengunduh data.";
-                    alert("Terjadi kesalahan sistem saat meminta ekstraksi file.");
-                });
-        });
-    </script>
-</body>
-</html>
+const url =
+'https://ahocevar.com/geoserver/wms' +
+'?SERVICE=WMS' +
+'&VERSION=1.1.1' +
+'&REQUEST=GetFeatureInfo' +
