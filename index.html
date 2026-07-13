@@ -29,10 +29,12 @@
       overflow-y: auto;
       height: 100vh;
       box-sizing: border-box;
-      transition: transform 0.3s ease;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+      opacity: 1;
     }
     #sidebar.hidden {
       transform: translateX(-100%);
+      opacity: 0;
       width: 0;
       padding: 0;
       overflow: hidden;
@@ -60,6 +62,42 @@
     }
     #sidebar.hidden + #map {
       width: 100vw;
+    }
+    #measure-control {
+      position: absolute;
+      right: 12px;
+      top: 120px;
+      bottom: auto;
+      z-index: 1100;
+      background: white;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-radius: 4px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      width: 30px;
+      height: 30px;
+      box-sizing: border-box;
+    }
+    #measure-control button {
+      display: block;
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      text-align: center;
+      color: #333;
+      text-decoration: none;
+      font-size: 16px;
+      cursor: pointer;
+      box-sizing: border-box;
+      border: none;
+      background: white;
+      padding: 0;
+    }
+    #measure-control button.active {
+      background-color: #0079c1;
+      color: white;
     }
     .btn {
       background-color: #0079c1;
@@ -105,6 +143,43 @@
       border-radius: 4px;
       font-size: 12px;
     }
+    .leaflet-control-zoom a {
+      width: 34px;
+      height: 34px;
+      line-height: 34px;
+      font-size: 18px;
+    }
+    .leaflet-control-layers-toggle {
+      width: 30px !important;
+      height: 30px !important;
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: #333;
+      background-color: white;
+      border-radius: 4px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+      padding: 0 !important;
+      border: none !important;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23333' d='M12 3l9 5v8l-9 5-9-5V8l9-5zm0 2.2L5 8.6v6.8l7 3.9 7-3.9V8.6l-7-3.4z'/%3E%3C/svg%3E") !important;
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: 16px 16px;
+    }
+    .leaflet-control-layers-expanded {
+      padding: 8px;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    .leaflet-control-layers:not(.leaflet-control-layers-expanded) .leaflet-control-layers-list {
+      display: none;
+    }
+    .leaflet-control-layers:hover .leaflet-control-layers-list,
+    .leaflet-control-layers:focus-within .leaflet-control-layers-list,
+    .leaflet-control-layers.leaflet-control-layers-expanded .leaflet-control-layers-list {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -138,33 +213,175 @@
     </div>
 
     <div class="info-box">
-      <strong>Upload Data GeoJSON:</strong>
-      <input type="file" id="geojson-upload" accept=".geojson,.json" />
+      <strong>Upload Data GeoJSON/KMZ:</strong>
+      <input type="file" id="geojson-upload" accept=".geojson,.json,.kmz,.kml" />
       <button class="btn small" id="upload-btn">Tampilkan Layer</button>
+    </div>
+
+    <div class="info-box">
+      <strong>Widget Layer & Basemap</strong>
+      <label class="form-row">
+        <input type="checkbox" id="admin-layer-toggle" checked />
+        Tampilkan batas administrasi (WMS)
+      </label>
+      <div class="form-row">
+        <label for="basemap-select">Basemap</label>
+        <select id="basemap-select">
+          <option value="OpenStreetMap">OpenStreetMap</option>
+          <option value="Esri World Imagery">Esri World Imagery</option>
+          <option value="Carto Light">Carto Light</option>
+        </select>
+      </div>
     </div>
 
     <button class="btn" id="download-btn">Unduh Data (GeoJSON)</button>
   </div>
 
   <div id="map"></div>
+  <div id="measure-control" class="leaflet-control-custom" title="Measure Jarak"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script>
     const map = L.map('map', {
       zoomControl: false
-    }).setView([39.5, -98.35], 4);
+    }).setView([-3.5, 120.2], 7);
     let uploadedLayer = null;
     let searchMarker = null;
     let activeLayerSource = { type: 'arcgis', data: null, name: 'arcgis-state-layer' };
+    let measureActive = false;
+    let measureLine = null;
+    let measurePoints = [];
+    let activePopup = null;
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
+    const esriImageryLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri'
+    });
+
+    const cartoLightLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+    });
+
+    const baseLayers = {
+      'OpenStreetMap': osmLayer,
+      'Esri World Imagery': esriImageryLayer,
+      'Carto Light': cartoLightLayer
+    };
+
+    const adminBoundaryWmsLayer = L.tileLayer.wms('https://ahocevar.com/geoserver/wms', {
+      layers: 'topp:states',
+      format: 'image/png',
+      transparent: true,
+      attribution: 'GeoServer Demo WMS',
+      pane: 'overlayPane',
+      zIndex: 1000
+    }).addTo(map);
+
+    const overlayLayers = {
+      'Batas Administrasi (WMS)': adminBoundaryWmsLayer
+    };
+
+    L.control.layers(baseLayers, overlayLayers, { position: 'topright' }).addTo(map);
+
+    const basemapSelect = document.getElementById('basemap-select');
+    const adminLayerToggle = document.getElementById('admin-layer-toggle');
+
+    function setBaseMap(layerKey) {
+      Object.entries(baseLayers).forEach(([key, layer]) => {
+        if (layer && map.hasLayer(layer) && key !== layerKey) {
+          map.removeLayer(layer);
+        }
+      });
+
+      const selectedLayer = baseLayers[layerKey];
+      if (selectedLayer && !map.hasLayer(selectedLayer)) {
+        selectedLayer.addTo(map);
+      }
+    }
+
+    basemapSelect.addEventListener('change', (event) => {
+      setBaseMap(event.target.value);
+    });
+
+    adminLayerToggle.addEventListener('change', (event) => {
+      if (event.target.checked) {
+        adminBoundaryWmsLayer.addTo(map);
+      } else {
+        map.removeLayer(adminBoundaryWmsLayer);
+      }
+    });
+
     const featureServiceUrl = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_States_Generalized/FeatureServer/0';
+    const measureControl = document.getElementById('measure-control');
+    const measureButton = document.createElement('button');
+    measureButton.type = 'button';
+    measureButton.innerHTML = '📏';
+    measureButton.title = 'Measure Jarak';
+    measureControl.appendChild(measureButton);
+
+    function clearMeasure() {
+      if (measureLine) {
+        map.removeLayer(measureLine);
+        measureLine = null;
+      }
+      if (activePopup) {
+        map.closePopup(activePopup);
+        activePopup = null;
+      }
+      measurePoints = [];
+      measureActive = false;
+      measureButton.classList.remove('active');
+      map.getContainer().style.cursor = '';
+      map.off('click', handleMeasureClick);
+    }
+
+    function handleMeasureClick(event) {
+      if (!measureActive) return;
+      const latlng = event.latlng;
+      if (measurePoints.length === 0) {
+        measurePoints.push(latlng);
+        measureLine = L.polyline([latlng], { color: '#d9534f', weight: 3 }).addTo(map);
+        return;
+      }
+
+      measurePoints.push(latlng);
+      measureLine.setLatLngs(measurePoints);
+
+      const totalDistance = measurePoints.reduce((sum, point, index) => {
+        return index === 0 ? 0 : sum + map.distance(measurePoints[index - 1], point) / 1000;
+      }, 0);
+
+      if (activePopup) {
+        map.closePopup(activePopup);
+      }
+      activePopup = L.popup().setLatLng(latlng).setContent(`<b>Jarak:</b> ${totalDistance.toFixed(2)} km`);
+      activePopup.addTo(map);
+      clearMeasure();
+    }
+
+    function startMeasure() {
+      clearMeasure();
+      measureActive = true;
+      measureButton.classList.add('active');
+      map.getContainer().style.cursor = 'crosshair';
+      map.on('click', handleMeasureClick);
+    }
+
+    measureButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (measureActive) {
+        clearMeasure();
+        return;
+      }
+      startMeasure();
+    });
 
     const statesLayer = L.esri.featureLayer({
       url: featureServiceUrl,
@@ -242,42 +459,135 @@
       console.log(`Koordinat UTM ditemukan di ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
     });
 
-    document.getElementById('upload-btn').addEventListener('click', () => {
+    function parseCoordinates(coordinatesText) {
+      return coordinatesText
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((value) => {
+          const parts = value.split(',').map((item) => parseFloat(item));
+          return [parts[0], parts[1]];
+        })
+        .filter((pair) => !Number.isNaN(pair[0]) && !Number.isNaN(pair[1]));
+    }
+
+    function parseGeometryElement(element) {
+      const tag = element.tagName ? element.tagName.toLowerCase() : '';
+      if (tag === 'point') {
+        const coordinatesText = element.getElementsByTagName('coordinates')[0]?.textContent || '';
+        const coords = parseCoordinates(coordinatesText);
+        if (coords.length > 0) {
+          return { type: 'Point', coordinates: coords[0] };
+        }
+      }
+      if (tag === 'linestring') {
+        const coordinatesText = element.getElementsByTagName('coordinates')[0]?.textContent || '';
+        const coords = parseCoordinates(coordinatesText);
+        if (coords.length > 0) {
+          return { type: 'LineString', coordinates: coords };
+        }
+      }
+      if (tag === 'polygon') {
+        const linearRing = element.getElementsByTagName('LineString')[0] || element.getElementsByTagName('LinearRing')[0];
+        if (linearRing) {
+          const coordinatesText = linearRing.getElementsByTagName('coordinates')[0]?.textContent || '';
+          const coords = parseCoordinates(coordinatesText);
+          if (coords.length > 0) {
+            return { type: 'Polygon', coordinates: [coords] };
+          }
+        }
+      }
+      if (tag === 'multigeometry') {
+        const geometries = [];
+        Array.from(element.children).forEach((child) => {
+          const geometry = parseGeometryElement(child);
+          if (geometry) {
+            geometries.push(geometry);
+          }
+        });
+        return geometries;
+      }
+      return null;
+    }
+
+    function parseKmlToGeoJson(kmlText) {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(kmlText, 'application/xml');
+      const placemarks = Array.from(xml.getElementsByTagName('Placemark'));
+      const features = [];
+
+      placemarks.forEach((placemark) => {
+        const name = placemark.getElementsByTagName('name')[0]?.textContent || 'Layer';
+        const children = Array.from(placemark.children);
+        children.forEach((child) => {
+          const geometry = parseGeometryElement(child);
+          if (geometry) {
+            const geometries = Array.isArray(geometry) ? geometry : [geometry];
+            geometries.forEach((item) => {
+              features.push({
+                type: 'Feature',
+                properties: { name },
+                geometry: item
+              });
+            });
+          }
+        });
+      });
+
+      return { type: 'FeatureCollection', features };
+    }
+
+    document.getElementById('upload-btn').addEventListener('click', async () => {
       const fileInput = document.getElementById('geojson-upload');
       const file = fileInput.files[0];
 
       if (!file) {
-        console.log('Pilih file GeoJSON terlebih dahulu.');
+        console.log('Pilih file GeoJSON atau KMZ terlebih dahulu.');
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = function (event) {
-        try {
-          const geojson = JSON.parse(event.target.result);
-          if (uploadedLayer) {
-            map.removeLayer(uploadedLayer);
+      try {
+        let geojson = null;
+        let fileName = file.name;
+        const lowerName = file.name.toLowerCase();
+
+        if (lowerName.endsWith('.kmz')) {
+          const zip = await JSZip.loadAsync(file);
+          const kmlEntry = Object.keys(zip.files).find((entry) => entry.toLowerCase().endsWith('.kml'));
+          if (!kmlEntry) {
+            throw new Error('Tidak ada file KML di dalam KMZ');
           }
-
-          uploadedLayer = L.geoJSON(geojson, {
-            style: function () {
-              return { color: '#ff6b6b', weight: 2, fillOpacity: 0.25 };
-            }
-          }).addTo(map);
-
-          activeLayerSource = { type: 'upload', data: geojson, name: file.name };
-
-          const bounds = uploadedLayer.getBounds();
-          if (bounds && bounds.isValid()) {
-            map.fitBounds(bounds);
-          }
-          console.log('Layer GeoJSON berhasil ditampilkan');
-        } catch (error) {
-          console.error(error);
-          console.log('File GeoJSON tidak valid');
+          const kmlText = await zip.file(kmlEntry).async('string');
+          geojson = parseKmlToGeoJson(kmlText);
+        } else if (lowerName.endsWith('.kml')) {
+          const text = await file.text();
+          geojson = parseKmlToGeoJson(text);
+        } else {
+          const text = await file.text();
+          geojson = JSON.parse(text);
         }
-      };
-      reader.readAsText(file);
+
+        if (uploadedLayer) {
+          map.removeLayer(uploadedLayer);
+        }
+
+        uploadedLayer = L.geoJSON(geojson, {
+          style: function () {
+            return { color: '#ff6b6b', weight: 2, fillOpacity: 0.25 };
+          }
+        }).addTo(map);
+
+        activeLayerSource = { type: 'upload', data: geojson, name: fileName };
+
+        const bounds = uploadedLayer.getBounds();
+        if (bounds && bounds.isValid()) {
+          map.fitBounds(bounds);
+        }
+        console.log('Layer berhasil ditampilkan');
+      } catch (error) {
+        console.error(error);
+        console.log('File tidak valid untuk diproses');
+      }
     });
 
     document.getElementById('download-btn').addEventListener('click', async () => {
@@ -310,9 +620,10 @@
 
     document.getElementById('toggle-sidebar').addEventListener('click', () => {
       const sidebar = document.getElementById('sidebar');
-      sidebar.classList.toggle('hidden');
+      const isHidden = sidebar.classList.toggle('hidden');
       const button = document.getElementById('toggle-sidebar');
-      button.textContent = sidebar.classList.contains('hidden') ? '☰' : '✕';
+      button.textContent = isHidden ? '☰' : '✕';
+      button.title = isHidden ? 'Buka Sidebar' : 'Tutup Sidebar';
     });
   </script>
 </body>
