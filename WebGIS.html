@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Enterprise WEBGIS</title>
+
+/leaflet@1.9.4/dist/leaflet.css"/>
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet.fullscreen@3.0.0/Control.FullScreen.css"/>
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css
+width:100%;
+height:100%;
+}
+
+#panel{
+position:absolute;
+top:10px;
+left:10px;
+z-index:1000;
+background:white;
+padding:12px;
+border-radius:8px;
+box-shadow:0 0 10px rgba(0,0,0,.3);
+width:300px;
+max-height:90%;
+overflow:auto;
+}
+
+input,select,button{
+width:100%;
+margin-top:5px;
+padding:6px;
+}
+
+#coords{
+position:absolute;
+bottom:10px;
+left:10px;
+background:white;
+padding:5px;
+z-index:1000;
+}
+</style>
+</head>
+<body>
+
+<div id="panel">
+
+<h3>WEBGIS Enterprise</h3>
+
+<label>WMS URL</label>
+
+<input id="wmsUrl"
+value="https://ahocevar.com/geoserver/wms">
+
+<button onclick="loadCapabilities()">
+Load Layers
+</button>
+
+<select id="layerList"></select>
+
+<button onclick="addSelectedLayer()">
+Tambah Layer
+</button>
+
+<hr>
+
+<label>Cari Lokasi</label>
+
+<input id="searchText" placeholder="Jakarta">
+
+<button onclick="searchLocation()">
+Cari
+</button>
+
+<hr>
+
+<label>Upload GeoJSON</label>
+
+<input type="file" id="geojsonFile">
+
+<button onclick="downloadGeoJSON()">
+Download GeoJSON
+</button>
+
+</div>
+
+<div id="coords">
+Lat: 0 | Lon: 0
+</div>
+
+<div id="map"></div>
+
+<script src="https://st/leaflet.js"></script>
+
+7.1.min.js"></script>
+
+.com/leaflet.fullscreen@3.0.0/Control.FullScreen.js"></script>
+
+<script .draw/1.0.4/leaflet.draw.js"></script>
+
+<script>
+
+var map=L.map('map',{
+fullscreenControl:true
+}).setView([-2.5,121.3],6);
+
+var osm=L.tileLayer(
+'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+{attribution:'OSM'}
+).addTo(map);
+
+var topo=L.tileLayer(
+'https://tile.opentopomap.org/{z}/{x}/{y}.png'
+);
+
+var satellite=L.tileLayer(
+'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+);
+
+L.control.layers(
+{
+"OpenStreetMap":osm,
+"Topographic":topo,
+"Satellite":satellite
+},
+{}
+).addTo(map);
+
+map.addControl(new L.Control.Scale());
+
+map.on('mousemove', e=>{
+document.getElementById('coords').innerHTML=
+'Lat: '+e.latlng.lat.toFixed(6)+
+' | Lon: '+e.latlng.lng.toFixed(6);
+});
+
+var drawnItems=new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+var drawControl=new L.Control.Draw({
+edit:{
+featureGroup:drawnItems
+}
+});
+
+map.addControl(drawControl);
+
+map.on(L.Draw.Event.CREATED,function(e){
+drawnItems.addLayer(e.layer);
+});
+
+var currentGeoJSON=null;
+
+document.getElementById("geojsonFile")
+.addEventListener("change",function(evt){
+
+var file=evt.target.files[0];
+var reader=new FileReader();
+
+reader.onload=function(e){
+
+var data=JSON.parse(e.target.result);
+
+currentGeoJSON=L.geoJSON(data)
+.addTo(map);
+
+map.fitBounds(currentGeoJSON.getBounds());
+
+};
+
+reader.readAsText(file);
+
+});
+
+function downloadGeoJSON(){
+
+if(!currentGeoJSON){
+alert("Tidak ada GeoJSON");
+return;
+}
+
+var features=[];
+
+currentGeoJSON.eachLayer(function(layer){
+
+if(layer.feature){
+features.push(layer.feature);
+}
+
+});
+
+var fc={
+type:"FeatureCollection",
+features:features
+};
+
+var blob=new Blob(
+[JSON.stringify(fc,null,2)],
+{type:"application/json"}
+);
+
+var a=document.createElement("a");
+
+a.href=URL.createObjectURL(blob);
+a.download="data.geojson";
+a.click();
+
+}
+
+async function loadCapabilities(){
+
+const url=document.getElementById("wmsUrl").value;
+
+const cap=
+url+
+'?service=WMS&request=GetCapabilities';
+
+const text=await fetch(cap).then(r=>r.text());
+
+const parser=new DOMParser();
+
+const xml=parser.parseFromString(
+text,
+"text/xml"
+);
+
+const layers=
+xml.getElementsByTagName('Layer');
+
+const select=
+document.getElementById('layerList');
+
+select.innerHTML='';
+
+for(let i=0;i<layers.length;i++){
+
+const name=
+layers[i].getElementsByTagName('Name')[0];
+
+if(name){
+
+let opt=document.createElement('option');
+
+opt.value=name.textContent;
+opt.textContent=name.textContent;
+
+select.appendChild(opt);
+
+}
+
+}
+
+}
+
+var activeLayers=[];
+
+function addSelectedLayer(){
+
+var url=
+document.getElementById("wmsUrl").value;
+
+var layerName=
+document.getElementById("layerList").value;
+
+var layer=
+L.tileLayer.wms(url,{
+layers:layerName,
+format:'image/png',
+transparent:true
+});
+
+layer.addTo(map);
+
+activeLayers.push(layer);
+
+layer.on('load',()=>{
+console.log(layerName+" loaded");
+});
+
+}
+
+map.on('click',async function(e){
+
+if(activeLayers.length===0) return;
+
+const layer=activeLayers[0];
+
+const point=map.latLngToContainerPoint(
+e.latlng,
+map.getZoom()
+);
+
+const size=map.getSize();
+
+const bbox=map.getBounds().toBBoxString();
+
+const url=
+layer._url+
+'?SERVICE=WMS'+
+'&VERSION=1.1.1'+
+'&REQUEST=GetFeatureInfo'+
+'&LAYERS='+layer.wmsParams.layers+
+'&QUERY_LAYERS='+layer.wmsParams.layers+
+'&INFO_FORMAT=text/html'+
+'&X='+Math.round(point.x)+
+'&Y='+Math.round(point.y)+
+'&SRS=EPSG:4326'+
+'&WIDTH='+size.x+
+'&HEIGHT='+size.y+
+'&BBOX='+bbox;
+
+try{
+
+const result=
+await fetch(url).then(r=>r.text());
+
+L.popup()
+.setLatLng(e.latlng)
+.setContent(result)
+.openOn(map);
+
+}catch(err){
+
+console.log(err);
+
+}
+
+});
+
+async function searchLocation(){
+
+const text=
+document.getElementById('searchText').value;
+
+const url=
+'https://nominatim.openstreetmap.org/search?format=json&q='+
+encodeURIComponent(text);
+
+const result=
+await fetch(url).then(r=>r.json());
+
+if(result.length>0){
+
+map.setView(
+[
+parseFloat(result[0].lat),
+parseFloat(result[0].lon)
+],
+13
+);
+
+}
+
+}
+
+loadCapabilities();
+
+</script>
+
+</body>
+</html>
