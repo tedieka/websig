@@ -1,48 +1,144 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-<meta charset="utf-8">
-<title>WEBGIS</title>
-
-https://unpkg.com/leaflet@1.9.4/dist/leaflet.css
-
-<style>
-html,body,#map{
-height:100%;
-margin:0;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi GIS Mini: Streaming & Download Data ArcGIS</title>
+    
+    <!-- CSS Leaflet untuk styling peta -->
+    <link rel="stylesheet" href="https://unpkg.com" />
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+        }
+        #sidebar {
+            width: 320px;
+            background: #f4f5f7;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #map {
+            flex: 1;
+            height: 100%;
+        }
+        .btn {
+            background-color: #0079c1;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background-color: #005e96;
+        }
+        .info-box {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 12px;
+        }
+    </style>
 </head>
-
 <body>
 
-<div id="map"></div>
+    <!-- Panel Kontrol Samping (Sidebar) -->
+    <div id="sidebar">
+        <h3>Portal Geo-Mini</h3>
+        <p>Aplikasi ini mendemonstrasikan fungsi <i>streaming layer</i> dan ekstraksi data spasial dari server ArcGIS REST API.</p>
+        
+        <div class="info-box">
+            <strong>Status Layer Aktif:</strong>
+            <div id="layer-status">Memuat data batas wilayah...</div>
+        </div>
 
-<script src="https://unpkg.com/leafleteaflet.js
+        <!-- Tombol untuk mengunduh data berupa file GeoJSON -->
+        <button class="btn" id="download-btn">Unduh Data (GeoJSON)</button>
+    </div>
 
-<script>
+    <!-- Kontainer Utama Peta -->
+    <div id="map"></div>
 
-var map = L.map('map').setView([-2.5,121.3],6);
+    <!-- JS Leaflet & Pustaka Esri Leaflet untuk koneksi ke ArcGIS -->
+    <script src="https://unpkg.com"></script>
+    <script src="https://unpkg.com"></script>
 
-L.tileLayer(
-'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-{
-attribution:'© OpenStreetMap'
-}
-).addTo(map);
+    <script>
+        // 1. Inisialisasi Peta dengan koordinat tengah wilayah Indonesia
+        const map = L.map('map').setView([-2.5, 118.0], 5);
 
-var wms = L.tileLayer.wms(
-'https://ahocevar.com/geoserver/wms',
-{
-layers:'topp:states',
-format:'image/png',
-transparent:true
-}
-);
+        // 2. Menambahkan Basemap Grid Standar (Basemap open-source sebagai latar)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
 
-wms.addTo(map);
+        // 3. STREAMING MAP: Menghubungkan ke ArcGIS REST Service (Contoh data sampel Esri)
+        // Jika menggunakan Ina-Geoportal, URL ini diganti dengan endpoint internal tanahair.indonesia.go.id
+        const featureServiceUrl = 'https://arcgis.com';
 
-</script>
+        // Tampilkan layer langsung ke peta secara dinamis (streaming vektor)
+        const geoserverLayer = L.esri.featureLayer({
+            url: featureServiceUrl,
+            style: function () {
+                return { color: '#0079c1', weight: 2, fillOpacity: 0.2 };
+            }
+        }).addTo(map);
 
+        // Memberikan popup informasi ketika poligon peta di-klik pengguna
+        geoserverLayer.bindPopup(function (layer) {
+            return L.Util.template('<h4>{STATE_NAME}</h4><p>Total Populasi: {POP_CENSUS2020}</p>', layer.feature.properties);
+        });
+
+        geoserverLayer.on('load', function() {
+            document.getElementById('layer-status').innerText = "Layer berhasil dimuat dari server.";
+        });
+
+        // 4. UNDUH DATA: Mengambil data spasial asli dari server menggunakan kueri REST API
+        document.getElementById('download-btn').addEventListener('click', function () {
+            document.getElementById('layer-status').innerText = "Sedang memproses unduhan...";
+            
+            // Membuat URL kueri untuk meminta format mentah GeoJSON
+            // `where=1=1` mengambil semua data, `f=geojson` memaksa server mengembalikan format berkas standar geospasial
+            const queryUrl = `${featureServiceUrl}/query?where=1=1&outFields=*&f=geojson`;
+
+            fetch(queryUrl)
+                .then(response => {
+                    if (!response.ok) throw new Error("Gagal mengambil data dari server ArcGIS.");
+                    return response.json();
+                })
+                .then(geojsonData => {
+                    // Konversi objek JSON menjadi file text blob agar bisa diunduh browser
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geojsonData));
+                    const downloadAnchor = document.createElement('a');
+                    
+                    downloadAnchor.setAttribute("href", dataStr);
+                    downloadAnchor.setAttribute("download", "data_rbi_extracted.geojson");
+                    document.body.appendChild(downloadAnchor);
+                    
+                    downloadAnchor.click(); // Memicu download otomatis pada browser komputer
+                    downloadAnchor.remove();
+                    
+                    document.getElementById('layer-status').innerText = "Unduhan selesai!";
+                })
+                .catch(error => {
+                    console.error(error);
+                    document.getElementById('layer-status').innerText = "Gagal mengunduh data.";
+                    alert("Terjadi kesalahan sistem saat meminta ekstraksi file.");
+                });
+        });
+    </script>
 </body>
 </html>
