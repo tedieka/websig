@@ -1,68 +1,112 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>WEBGIS WMS Viewer</title>
+<title>Portal Geo-Mini</title>
 
-<link rel="kg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" hrefleaflet.css"/>
 
 <style>
 
-html,body{
-height:100%;
+body{
 margin:0;
-font-family:Arial,Helvetica,sans-serif;
+padding:0;
+display:flex;
+height:100vh;
+font-family:Arial, sans-serif;
+}
+
+#sidebar{
+width:320px;
+background:#f4f5f7;
+padding:20px;
+box-shadow:2px 0 5px rgba(0,0,0,0.1);
+z-index:1000;
+overflow-y:auto;
 }
 
 #map{
+flex:1;
 height:100%;
-width:100%;
 }
 
-#panel{
-position:absolute;
-top:10px;
-left:10px;
-z-index:1000;
-background:white;
-padding:12px;
-border-radius:8px;
-box-shadow:0 0 10px rgba(0,0,0,0.3);
-width:280px;
-}
-
-#panel h3{
-margin-top:0;
-}
-
-select,button{
+.btn{
+background:#0079c1;
+color:white;
+border:none;
+padding:10px;
+cursor:pointer;
+border-radius:4px;
 width:100%;
 margin-top:5px;
+}
+
+.btn:hover{
+background:#005e96;
+}
+
+.info-box{
+background:white;
+padding:10px;
+border-radius:4px;
+border:1px solid #ccc;
+margin-bottom:10px;
+}
+
+select,
+input{
+width:100%;
 padding:8px;
+box-sizing:border-box;
+margin-bottom:10px;
 }
 
 #coord{
-position:absolute;
-bottom:10px;
-left:10px;
-z-index:1000;
-background:white;
-padding:6px;
-border-radius:5px;
 font-size:12px;
+margin-top:10px;
+}
+
+.layer-item{
+font-size:13px;
+margin-top:3px;
 }
 
 </style>
 </head>
 <body>
 
-<div id="panel">
+<div id="sidebar">
 
-<h3>WEBGIS WMS</h3>
+<h2>Portal Geo-Mini</h2>
 
-<label>Pilih Layer WMS</label>
+<p>
+WEBGIS sederhana menggunakan Leaflet dan WMS publik.
+</p>
+
+<div class="info-box">
+<b>Status</b>
+<div id="layer-status">
+Siap
+</div>
+</div>
+
+<h4>Cari Lokasi</h4>
+
+<input
+id="searchText"
+placeholder="Jakarta">
+
+<button
+class="btn"
+onclick="searchLocation()">
+Cari Lokasi
+</button>
+
+<hr>
+
+<h4>Pilih Layer WMS</h4>
 
 <select id="layerSelect">
 
@@ -75,32 +119,56 @@ Tasmania Roads
 </option>
 
 <option value="topp:tasmania_water_bodies">
-Tasmania Water
+Tasmania Water Bodies
 </option>
 
 </select>
 
-<button onclick="loadLayer()">
-Tampilkan Layer
+<button
+class="btn"
+onclick="addWMSLayer()">
+
+Tambah Layer
+
 </button>
 
-<button onclick="downloadGeoJSON()">
-Download GeoJSON
+<hr>
+
+<h4>Upload GeoJSON</h4>
+
+<input
+type="file"
+id="geojsonFile">
+
+<button
+class="btn"
+onclick="downloadSample()">
+
+Unduh Contoh GeoJSON
+
 </button>
 
-</div>
+<hr>
+
+<h4>Layer Aktif</h4>
+
+<div id="layerList"></div>
 
 <div id="coord">
 Lat: 0 | Lon: 0
 </div>
 
+</div>
+
 <div id="map"></div>
 
-1.9.4/dist/leaflet.js"></script>
+<script src="https://t.js"></script>
 
 <script>
 
-const map = L.map('map').setView([20,-95],4);
+const map =
+L.map('map')
+.setView([-2.5,121.3],5);
 
 L.tileLayer(
 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -109,108 +177,126 @@ attribution:'© OpenStreetMap'
 }
 ).addTo(map);
 
-let currentLayer=null;
-
-function loadLayer(){
-
-if(currentLayer){
-map.removeLayer(currentLayer);
-}
-
-const selected =
-document.getElementById(
-'layerSelect'
-).value;
-
-currentLayer = L.tileLayer.wms(
-'https://ahocevar.com/geoserver/wms',
-{
-layers:selected,
-format:'image/png',
-transparent:true
-}
-);
-
-currentLayer.addTo(map);
-
-}
-
-loadLayer();
+let activeLayers = {};
+let layerCounter = 0;
+let uploadedLayer = null;
 
 map.on('mousemove',function(e){
 
-document.getElementById('coord')
-.innerHTML =
-'Lat : '+
-e.latlng.lat.toFixed(6)+
-' | Lon : '+
+document.getElementById('coord').innerHTML =
+'Lat : ' +
+e.latlng.lat.toFixed(6) +
+' | Lon : ' +
 e.latlng.lng.toFixed(6);
 
 });
 
-map.on('click',async function(e){
-
-if(!currentLayer) return;
-
-const point =
-map.latLngToContainerPoint(
-e.latlng,
-map.getZoom()
-);
-
-const size = map.getSize();
-
-const bbox =
-map.getBounds().toBBoxString();
+function addWMSLayer(){
 
 const layerName =
 document.getElementById(
 'layerSelect'
 ).value;
 
-const url =
-'https://ahocevar.com/geoserver/wms' +
-'?SERVICE=WMS' +
-'&VERSION=1.1.1' +
-'&REQUEST=GetFeatureInfo' +
-'&LAYERS=' + layerName +
-'&QUERY_LAYERS=' + layerName +
-'&INFO_FORMAT=text/html' +
-'&SRS=EPSG:4326' +
-'&WIDTH=' + size.x +
-'&HEIGHT=' + size.y +
-'&X=' + Math.round(point.x) +
-'&Y=' + Math.round(point.y) +
-'&BBOX=' + bbox;
+const layer =
+L.tileLayer.wms(
+'https://ahocevar.com/geoserver/wms',
+{
+layers:layerName,
+format:'image/png',
+transparent:true
+}
+).addTo(map);
 
-try{
+const id =
+'layer_' + layerCounter++;
 
-const response =
-await fetch(url);
+activeLayers[id] = layer;
 
-const html =
-await response.text();
+const div =
+document.createElement('div');
 
-L.popup()
-.setLatLng(e.latlng)
-.setContent(html)
-.openOn(map);
+div.className='layer-item';
+
+div.innerHTML =
+`<input type="checkbox"
+checked
+onchange="toggleLayer('${id}',this.checked)">
+${layerName}`;
+
+document
+.getElementById('layerList')
+.appendChild(div);
+
+document
+.getElementById('layer-status')
+.innerHTML =
+'Layer berhasil ditambahkan';
 
 }
-catch(err){
 
-console.log(err);
+function toggleLayer(id,status){
+
+if(status){
+map.addLayer(activeLayers[id]);
+}else{
+map.removeLayer(activeLayers[id]);
+}
 
 }
+
+document
+.getElementById('geojsonFile')
+.addEventListener(
+'change',
+function(e){
+
+const file =
+e.target.files[0];
+
+if(!file) return;
+
+const reader =
+new FileReader();
+
+reader.onload =
+function(evt){
+
+const geojson =
+JSON.parse(
+evt.target.result
+);
+
+if(uploadedLayer){
+map.removeLayer(
+uploadedLayer
+);
+}
+
+uploadedLayer =
+L.geoJSON(
+geojson
+).addTo(map);
+
+map.fitBounds(
+uploadedLayer.getBounds()
+);
+
+document
+.getElementById('layer-status')
+.innerHTML =
+'GeoJSON berhasil dimuat';
+
+};
+
+reader.readAsText(file);
 
 });
 
-function downloadGeoJSON(){
+function downloadSample(){
 
 const geojson = {
-
 "type":"FeatureCollection",
-
 "features":[
 {
 "type":"Feature",
@@ -223,12 +309,17 @@ const geojson = {
 }
 }
 ]
-
 };
 
 const blob =
 new Blob(
-[JSON.stringify(geojson,null,2)],
+[
+JSON.stringify(
+geojson,
+null,
+2
+)
+],
 {
 type:"application/json"
 }
@@ -241,9 +332,40 @@ a.href =
 URL.createObjectURL(blob);
 
 a.download =
-"soroako.geojson";
+"contoh.geojson";
 
 a.click();
+
+}
+
+async function searchLocation(){
+
+const text =
+document.getElementById(
+'searchText'
+).value;
+
+if(!text) return;
+
+const url =
+'https://nominatim.openstreetmap.org/search?format=json&q=' +
+encodeURIComponent(text);
+
+const result =
+await fetch(url)
+.then(r=>r.json());
+
+if(result.length){
+
+map.setView(
+[
+parseFloat(result[0].lat),
+parseFloat(result[0].lon)
+],
+12
+);
+
+}
 
 }
 
